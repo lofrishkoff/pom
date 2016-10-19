@@ -18,15 +18,15 @@ run.R2jags.model <- function(d,
     tau.p.0 <- 1/(sigma.p.0*sigma.p.0)
 
     ## Effect of continuous detection covariate
-    mu.p.beta ~ dnorm(0, 0.01)
+    mu.p.env ~ dnorm(0, 0.01)
 
-    sigma.p.beta ~ dunif(0, 20)
-    tau.p.beta <- 1/(sigma.p.beta* sigma.p.beta)
+    sigma.p.env ~ dunif(0, 20)
+    tau.p.env <- 1/(sigma.p.env* sigma.p.env)
 
     ## species-specific detectability
     for(sp in 1:nsp) {
       p.0[sp] ~ dnorm(mu.p.0,tau.p.0)
-      p.beta[sp] ~ dnorm(mu.p.beta,tau.p.beta)
+      p.env[sp] ~ dnorm(mu.p.env,tau.p.env)
     }
     
     ## *******************************************
@@ -40,11 +40,11 @@ run.R2jags.model <- function(d,
       psi.site[site] ~ dnorm(0, tau.psi.site)
     }
 
-    ## random effect of year on occupancy
-    sigma.psi.year ~ dunif(0,20)
-    tau.psi.year <- 1/(sigma.psi.year*sigma.psi.year)
-    for (yr in 1:nyr) {
-      psi.year[yr] ~ dnorm(0, tau.psi.year)
+    ## random effect of season on occupancy
+    sigma.psi.season ~ dunif(0,20)
+    tau.psi.season <- 1/(sigma.psi.season*sigma.psi.season)
+    for(season in 1:nseason) {
+      psi.season[season] ~ dnorm(0, tau.psi.season)
     }
     
     ## species-specific intercepts are modeled as fixed effects
@@ -55,10 +55,10 @@ run.R2jags.model <- function(d,
     
     ## create species-specific slopes with regard to the environment
     ## (phylogeny is incorporated here)
-    mu.psi.beta ~ dnorm(0,0.001)
+    beta.0 ~ dnorm(0,0.001)
     beta.trait ~ dnorm(0,0.001)
     for(sp in 1:nsp) {
-      mu.beta.sp[sp] <- mu.psi.beta + beta.trait*trait[sp]
+      mu.beta.sp[sp] <- beta.0 + beta.trait*trait[sp]
     }
 
     ## incorporate phylogenetic covariance structure into
@@ -70,11 +70,11 @@ run.R2jags.model <- function(d,
     
     ## convert to precision (or co-precision) matrix - While lambda
     ## above affects the relative weighting on the diagonal in
-    ## precision matrix (correlations), sigma.psi.beta (below) 
+    ## precision matrix (correlations), sigma.psi.env (below) 
     ## determines the overall magnitudes of the entries thereby 
     ## converting the correlation matrix to a covariance matrix.
-    sigma.psi.beta ~ dunif(0,20)
-    tau.beta.sp.mat[1:nsp,1:nsp] <-inverse((sigma.psi.beta^2)*beta.mat[,])
+    sigma.psi.env ~ dunif(0,20)
+    tau.beta.sp.mat[1:nsp,1:nsp] <-inverse((sigma.psi.env^2)*beta.mat[,])
     ## draw species-specific slopes
     psi.beta.sp[1:nsp] ~ dmnorm(mu.beta.sp[], tau.beta.sp.mat[,])
 
@@ -84,33 +84,34 @@ run.R2jags.model <- function(d,
 
     for(sp in 1:nsp) {
       for(site in 1:nsite) {
-        for(yr in 1:nyr) {        
+        for(season in 1:nseason) {        
           
-          logit(psi[sp,site,yr]) <-
+          logit(psi[sp,site,season]) <-
             psi.0[sp] + ## Species intercept
-              psi.beta.sp[sp]*env[site] + ## Species’ response to environment 
-                psi.site[site] + ## Random site effect
-                  psi.year[yr]  ## Random season effect
+            psi.beta.sp[sp]*env[site] + ## Species’ response to environment 
+            psi.site[site] + ## Random site effect
+            psi.season[season]  ## Random season effect
 
-          Z[sp,site,yr] ~ dbern(psi[sp,site,yr]) ## Draw occupancy states
+          Z[sp,site,season] ~ dbern(psi[sp,site,season]) ## Draw occupancy states
 
-          logit(p[sp,site, yr]) <- p.0[sp] + ## Species detection intercept
-            p.beta[sp] * env[site] ## Detection responses 
+          logit(p[sp,site, season]) <-
+            p.0[sp] + ## Species detection intercept
+            p.env[sp] * env[site] ## Detection responses 
           ## to environment          
 
-          E[sp,site,yr] <- Z[sp,site,yr]*p[sp,site,yr] ## Expected detection 
+          E[sp,site,season] <- Z[sp,site,season]*p[sp,site,season] ## Expected detection 
           ## probability
 
-          for(rep in 1:nrep[sp,site,yr]) {
-            X[sp,site,yr,rep] ~ dbern(E[sp,site,yr])
+          for(rep in 1:nrep[sp,site,season]) {
+            X[sp,site,season,rep] ~ dbern(E[sp,site,season])
           } # /rep
-        } # /yr
+        } # /season
       } # /site
     } # /sp
   } # /model.jags
 
 
-  d$data <- d$data[c('X', 'nsp', 'nsite', 'nyr', 'nrep', 'env',
+  d$data <- d$data[c('X', 'nsp', 'nsite', 'nseason', 'nrep', 'env',
                      'VCOV', 'ID', 'trait')]
   res <- jags(data=d$data,
               inits=d$inits,
